@@ -25,6 +25,14 @@ const int udpFrameHeartbeat = 0x30;
 
 const int _udpDataHeaderSize = 9; // type(1)+seq(2)+len(2)+crc32(4)
 
+/// A/B switch for the Wi‑Fi packet-loss investigation. When false the client
+/// goes silent for the whole download, as it did before the power-save work.
+/// Build with `--dart-define=WIFI_DOWNLOAD_HEARTBEAT=false` to compare.
+const bool kWifiDownloadHeartbeat = bool.fromEnvironment(
+  'WIFI_DOWNLOAD_HEARTBEAT',
+  defaultValue: true,
+);
+
 String _normalizeAtCommand(String cmd) {
   var line = cmd.trim();
   if (line.isEmpty) return line;
@@ -224,6 +232,11 @@ class ClipUdpSyncClient {
         _socket!.send(bd.buffer.asUint8List(0, 5), _host!, _port);
       } catch (_) {}
     });
+  }
+
+  void _pauseHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
   }
 
   void _resumeHeartbeat() {
@@ -546,7 +559,15 @@ class ClipUdpSyncClient {
     // at transferring / wrong progress while Wi‑Fi batch still reported success.
     var diskWriteChain = Future<void>.value();
 
-    _startHeartbeat(_downloadHeartbeatInterval);
+    if (kWifiDownloadHeartbeat) {
+      _startHeartbeat(_downloadHeartbeatInterval);
+    } else {
+      _pauseHeartbeat();
+    }
+    SdkLog.i(
+      'ClipUdpSync: download heartbeat='
+      '${kWifiDownloadHeartbeat ? '${_downloadHeartbeatInterval.inMilliseconds}ms' : 'off'}',
+    );
     try {
       String? currentName;
       var declaredFileSize = 0;
