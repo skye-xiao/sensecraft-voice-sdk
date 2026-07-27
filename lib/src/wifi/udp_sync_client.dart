@@ -200,9 +200,21 @@ class ClipUdpSyncClient {
     _startHeartbeat();
   }
 
-  void _startHeartbeat() {
+  /// Idle cadence: just enough to prove the session is still alive.
+  static const Duration _idleHeartbeatInterval = Duration(seconds: 5);
+
+  /// Cadence while a bulk download is in flight.
+  ///
+  /// The device AP carries no internet, so between our own datagrams the phone
+  /// sees an idle link and lets the Wi‑Fi radio enter power save. The AP then
+  /// buffers unicast DATA for a sleeping station, and on some OEM ROMs those
+  /// frames are silently dropped — surfacing as UDP loss at full signal. A
+  /// steady uplink trickle keeps the radio awake.
+  static const Duration _downloadHeartbeatInterval = Duration(milliseconds: 200);
+
+  void _startHeartbeat([Duration interval = _idleHeartbeatInterval]) {
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _heartbeatTimer = Timer.periodic(interval, (_) {
       if (!_connected || _socket == null || _host == null) return;
       final ts = DateTime.now().millisecondsSinceEpoch & 0xffffffff;
       final bd = ByteData(5)
@@ -212,11 +224,6 @@ class ClipUdpSyncClient {
         _socket!.send(bd.buffer.asUint8List(0, 5), _host!, _port);
       } catch (_) {}
     });
-  }
-
-  void _pauseHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
   }
 
   void _resumeHeartbeat() {
@@ -539,7 +546,7 @@ class ClipUdpSyncClient {
     // at transferring / wrong progress while Wi‑Fi batch still reported success.
     var diskWriteChain = Future<void>.value();
 
-    _pauseHeartbeat();
+    _startHeartbeat(_downloadHeartbeatInterval);
     try {
       String? currentName;
       var declaredFileSize = 0;
