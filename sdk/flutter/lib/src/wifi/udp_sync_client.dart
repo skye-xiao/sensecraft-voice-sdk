@@ -200,9 +200,12 @@ class ClipUdpSyncClient {
     _startHeartbeat();
   }
 
+  /// Idle cadence: just enough to prove the session is still alive.
+  static const Duration _idleHeartbeatInterval = Duration(seconds: 5);
+
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _heartbeatTimer = Timer.periodic(_idleHeartbeatInterval, (_) {
       if (!_connected || _socket == null || _host == null) return;
       final ts = DateTime.now().millisecondsSinceEpoch & 0xffffffff;
       final bd = ByteData(5)
@@ -214,6 +217,9 @@ class ClipUdpSyncClient {
     });
   }
 
+  /// Silence the uplink while a bulk download is in flight: every frame we send
+  /// contends with the device's TX on a half-duplex link, and the firmware has
+  /// to service the RX path mid-burst.
   void _pauseHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
